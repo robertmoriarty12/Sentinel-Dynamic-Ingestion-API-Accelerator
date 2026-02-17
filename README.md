@@ -1,178 +1,154 @@
-# Dynamic Ingestion Accelerator for Microsoft Sentinel
+# Microsoft Sentinel Dynamic Ingestion Accelerator
 
-A streamlined solution for ingesting dynamic JSON content into Microsoft Sentinel using the Azure Monitor Ingestion API. This accelerator demonstrates how to handle varying data schemas within a single `dynamic` column, allowing for flexible log ingestion without rigid schema constraints.
+An automated solution for ingesting dynamic JSON data into Microsoft Sentinel using the Azure Monitor Ingestion API with Data Collection Rules (DCR). This accelerator simplifies the process of sending custom log data to Sentinel workspaces.
 
-NOTE: This is just a sample for testing and acceleration. Don't use this directly for production environments without proper security hardening (e.g., Azure Key Vault).
+> **Note**: This is a testing and development accelerator. For production use, implement proper security practices such as Azure Key Vault for secrets management and managed identities.
 
-## 📋 Overview
+## 📋 What's Included
 
-This solution includes:
-- **ARM Template** (`deploy-arm-template.json`) - Creates a custom log table with a `dynamic` column (`RawData`), Data Collection Endpoint (DCE), and Data Collection Rule (DCR).
-- **Python Script** (`test_sentinel_ingestion.py`) - Sends diverse JSON records (e.g., UserLogin, FileAccess) to Sentinel.
-- **Dynamic Schema Strategy** - Instead of defining every column, data is packed into a `RawData` dynamic field.
+- **`deploy-arm-template.json`** - ARM template that deploys:
+  - Custom log table (`TestData_CL`) with dynamic RawData column
+  - Data Collection Endpoint (DCE)
+  - Data Collection Rule (DCR)
+- **`test_sentinel_ingestion.py`** - Python script for testing data ingestion to Sentinel
+- **`rawData.png`** - Visual reference of the dynamic data structure
 
 ## 🎯 Prerequisites
 
-Before you begin, ensure you have:
+- **Existing Log Analytics/Sentinel Workspace** in Azure
+- **Azure PowerShell** or **Azure CLI** installed
+- **Python 3.7+** with pip
+- **Azure Permissions**:
+  - Create App Registrations (Microsoft Entra ID)
+  - Deploy ARM templates to resource groups
+  - Assign RBAC roles on Data Collection Rules
 
-1. **Microsoft Sentinel Instance** - A Sentinel workspace must already be deployed in Azure
-2. **Azure CLI or PowerShell** - For deploying ARM templates
-3. **Python 3.7+** - For running the ingestion script
-4. **Azure Permissions** - Ability to:
-   - Create App Registrations in Azure AD
-   - Deploy resources to Azure (DCE, DCR, custom tables)
-   - Assign RBAC roles on Data Collection Rules
+## 🚀 Quick Start
 
-## 🚀 Deployment Steps
-
-### Step 1: Clone the Repository
+### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/Azure/Azure-Sentinel.git
-cd Azure-Sentinel/Solutions/cveBuster\ Vulnerability\ Scanning/Server/push_client_web/test
+git clone https://github.com/robertmoriarty12/Sentinel-Dynamic-Ingestion-API-Accelerator.git
+cd Sentinel-Dynamic-Ingestion-API-Accelerator
 ```
 
-### Step 2: Create Azure AD App Registration
+### Step 2: Create App Registration
 
-1. Navigate to **Azure Portal** → **Azure Active Directory** → **App registrations**
-2. Click **+ New registration**
-3. Enter a name (e.g., `SentinelTestIngestion`)
-4. Leave defaults and click **Register**
-5. **Copy the following values** (you'll need them later):
-   - **Application (client) ID**
-   - **Directory (tenant) ID**
-6. Navigate to **Certificates & secrets** → **+ New client secret**
-7. Add a description and select expiration period
-8. Click **Add** and **immediately copy the secret value** (you won't see it again!)
+#### Using PowerShell:
+```powershell
+# Connect to Azure
+Connect-AzAccount
 
-### Step 3: Deploy the ARM Template
+# Create App Registration
+$appName = "SentinelTestIngestion"
+$app = New-AzADApplication -DisplayName $appName
+$sp = New-AzADServicePrincipal -ApplicationId $app.AppId
+$secret = New-AzADAppCredential -ApplicationId $app.AppId -EndDate (Get-Date).AddYears(1)
 
-The ARM template creates the necessary Azure resources for data ingestion.
+# Save these values
+Write-Host "Client ID: $($app.AppId)"
+Write-Host "Tenant ID: $((Get-AzContext).Tenant.Id)"
+Write-Host "Client Secret: $($secret.SecretText)"
+```
 
-#### Option A: Using Azure CLI
-
+#### Using Azure CLI:
 ```bash
-az deployment group create \
-  --resource-group <your-resource-group-name> \
-  --template-file deploy-arm-template.json \
-  --parameters workspaceName=<your-sentinel-workspace-name>
+# Create App Registration
+APP_NAME="SentinelTestIngestion"
+APP_ID=$(az ad app create --display-name $APP_NAME --query appId -o tsv)
+az ad sp create --id $APP_ID
+SECRET=$(az ad app credential reset --id $APP_ID --append --query password -o tsv)
+
+# Display values
+echo "Client ID: $APP_ID"
+echo "Tenant ID: $(az account show --query tenantId -o tsv)"
+echo "Client Secret: $SECRET"
 ```
 
-#### Option B: Using PowerShell
+⚠️ **Save these credentials immediately - you cannot retrieve the secret later!**
+
+### Step 3: Deploy ARM Template
+
+#### Using PowerShell:
 
 ```powershell
+# Deploy the ARM template
 New-AzResourceGroupDeployment `
-  -ResourceGroupName <your-resource-group-name> `
+  -ResourceGroupName "your-resource-group-name" `
   -TemplateFile .\deploy-arm-template.json `
-  -workspaceName <your-sentinel-workspace-name>
+  -workspaceName "your-sentinel-workspace-name"
 ```
 
-#### Option C: Using Azure Portal
+#### Using Azure CLI:
+```bash
+az deployment group create \
+  --resource-group your-resource-group-name \
+  --template-file deploy-arm-template.json \
+  --parameters workspaceName=your-sentinel-workspace-name
+```
 
-1. Navigate to **Azure Portal** → **Resource groups** → Select your resource group
-2. Click **Create** → Search for "Template deployment (deploy using custom template)"
-3. Click **Create** → **Build your own template in the editor**
-4. Copy and paste the contents of `deploy-arm-template.json`
-5. Click **Save**
-6. Fill in the parameters:
-   - **Workspace Name**: Your Log Analytics/Sentinel workspace name
-   - **Location**: Same region as your workspace
-7. Click **Review + create** → **Create**
-
-**⏱️ Wait for deployment to complete** (typically 2-5 minutes)
+⏱️ **Deployment takes 2-5 minutes**
 
 ### Step 4: Capture Deployment Outputs
 
-After the ARM template deploys successfully, capture the output values:
+After deployment completes, save these output values:
 
-#### Using Azure CLI:
+#### PowerShell:
+```powershell
+$deployment = Get-AzResourceGroupDeployment `
+  -ResourceGroupName "your-resource-group-name" `
+  -Name "deploy-arm-template"
 
+# Display outputs
+$deployment.Outputs.dataCollectionEndpointUrl.Value
+$deployment.Outputs.dataCollectionRuleImmutableId.Value
+$deployment.Outputs.streamName.Value
+```
+
+#### Azure CLI:
 ```bash
 az deployment group show \
-  --resource-group <your-resource-group-name> \
+  --resource-group your-resource-group-name \
   --name deploy-arm-template \
-  --query properties.outputs
+  --query "properties.outputs"
 ```
 
-#### Using PowerShell:
+**Save these values:**
+- `dataCollectionEndpointUrl` = Your **DCE_ENDPOINT**
+- `dataCollectionRuleImmutableId` = Your **DCR_ID** (starts with `dcr-`)
+- `streamName` = Your **STREAM_NAME** (typically `Custom-TestData_CL`)
 
+### Step 5: Assign Permissions
+
+Grant the App Registration the **Monitoring Metrics Publisher** role on the Data Collection Rule.
+
+#### PowerShell:
 ```powershell
-$deployment = Get-AzResourceGroupDeployment `
-  -ResourceGroupName <your-resource-group-name> `
-  -Name deploy-arm-template
+$dcrId = "/subscriptions/YOUR_SUB_ID/resourceGroups/YOUR_RG/providers/Microsoft.Insights/dataCollectionRules/TestDataDCR"
+$spId = "YOUR_SERVICE_PRINCIPAL_OBJECT_ID"  # From Step 2
 
-$deployment.Outputs
-```
+# Wait for service principal to propagate
+Start-Sleep -Seconds 15
 
-#### Using Azure Portal:
-
-1. Navigate to **Resource groups** → Your resource group → **Deployments**
-2. Click on the deployment name (e.g., `deploy-arm-template`)
-3. Click **Outputs** in the left menu
-4. **Copy these values:**
-   - `dataCollectionEndpointUrl` → This is your **DCE_ENDPOINT**
-   - `dataCollectionRuleImmutableId` → This is your **DCR_ID**
-   - `streamName` → This is your **STREAM_NAME** (should be `Custom-TestData_CL`)
-
-### Step 5: Grant App Registration Permissions
-
-The App Registration (Service Principal) needs the **Monitoring Metrics Publisher** role on the Data Collection Rule. This allows the application to send data to the DCR.
-
-> **Important:** You'll need the **Application (client) ID** from Step 2 and the **App Registration name** (e.g., `SentinelTestIngestion`) to assign permissions.
-
-#### Using Azure CLI:
-
-```bash
-# Get the DCR Resource ID from deployment outputs
-DCR_RESOURCE_ID=$(az deployment group show \
-  --resource-group <your-resource-group-name> \
-  --name deploy-arm-template \
-  --query properties.outputs.dataCollectionRuleId.value -o tsv)
-
-# Assign the Monitoring Metrics Publisher role to the Service Principal
-# Replace <your-app-client-id> with the Application (client) ID from Step 2
-az role assignment create \
-  --assignee <your-app-client-id> \
-  --role "Monitoring Metrics Publisher" \
-  --scope $DCR_RESOURCE_ID
-```
-
-#### Using PowerShell:
-
-```powershell
-$deployment = Get-AzResourceGroupDeployment `
-  -ResourceGroupName <your-resource-group-name> `
-  -Name deploy-arm-template
-
-$dcrId = $deployment.Outputs.dataCollectionRuleId.Value
-
-# Assign the Monitoring Metrics Publisher role to the Service Principal
-# Replace <your-app-client-id> with the Application (client) ID from Step 2
+# Assign role
 New-AzRoleAssignment `
-  -ApplicationId <your-app-client-id> `
+  -ObjectId $spId `
   -RoleDefinitionName "Monitoring Metrics Publisher" `
   -Scope $dcrId
 ```
 
-#### Using Azure Portal:
+#### Azure CLI:
+```bash
+DCR_ID="/subscriptions/YOUR_SUB_ID/resourceGroups/YOUR_RG/providers/Microsoft.Insights/dataCollectionRules/TestDataDCR"
+SP_ID="YOUR_SERVICE_PRINCIPAL_OBJECT_ID"
 
-1. Navigate to **Monitor** → **Data Collection Rules**
-2. Find and click on **TestDataDCR** (the DCR created by the ARM template)
-3. Click **Access control (IAM)** in the left menu
-4. Click **+ Add** → **Add role assignment**
-5. Search for and select **Monitoring Metrics Publisher**
-6. Click **Next**
-7. Click **+ Select members**
-8. Search for your **App Registration name** (e.g., `SentinelTestIngestion`)
-   - You can also search by the **Application (client) ID** from Step 2
-9. Select it and click **Select**
-10. Click **Review + assign** → **Review + assign**
+az role assignment create \
+  --assignee $SP_ID \
+  --role "Monitoring Metrics Publisher" \
+  --scope $DCR_ID
+```
 
-**⏱️ Wait 2-3 minutes** for role assignment to propagate
-
-> **Verification:** To verify the role was assigned correctly:
-> - In the DCR, go to **Access control (IAM)** → **Role assignments**
-> - Look for your App Registration name under the **Monitoring Metrics Publisher** role
+⏱️ **Wait 2-3 minutes** for role assignment to propagate
 
 ### Step 6: Install Python Dependencies
 
@@ -180,68 +156,42 @@ New-AzRoleAssignment `
 pip install azure-identity azure-monitor-ingestion
 ```
 
-### Step 7: Configure the Python Script
+### Step 7: Configure Python Script
 
-Open `test_sentinel_ingestion.py` and fill in the configuration variables at the top:
+Edit `test_sentinel_ingestion.py` and update the configuration section:
 
 ```python
 # Azure AD App Registration credentials
-TENANT_ID = "<your-tenant-id>"          # From Step 2
-CLIENT_ID = "<your-client-id>"          # From Step 2
-CLIENT_SECRET = "<your-client-secret>"  # From Step 2
+TENANT_ID = "your-tenant-id"          # From Step 2
+CLIENT_ID = "your-client-id"          # From Step 2
+CLIENT_SECRET = "your-client-secret"  # From Step 2
 
 # Data Collection Endpoint and Rule
-DCE_ENDPOINT = "<dce-endpoint-url>"     # From Step 4 outputs
-DCR_ID = "<dcr-immutable-id>"           # From Step 4 outputs
-STREAM_NAME = "Custom-TestData_CL"      # From Step 4 outputs
+DCE_ENDPOINT = "https://your-dce-endpoint.ingest.monitor.azure.com"  # From Step 4
+DCR_ID = "dcr-xxxxxxxxxxxxx"          # From Step 4
+STREAM_NAME = "Custom-TestData_CL"    # From Step 4
 ```
 
-### Step 8: Run the Ingestion Script
+### Step 8: Run the Test Script
 
 ```bash
 python test_sentinel_ingestion.py
 ```
 
 **Expected output:**
-
 ```
 ======================================================================
 Microsoft Sentinel Test Data Ingestion Script
 Using Azure Monitor Ingestion API (DCE/DCR)
 ======================================================================
 
-Configuration:
-  Tenant ID: 3474cd6c-...
-  Client ID: 29ea01f1-...
-  DCE Endpoint: https://testdata-dce-kgq3.eastus-1.ingest.monitor.azure.com
-  DCR ID: dcr-d19fbcaf984a4989beb027e6a15d818a
-  Stream Name: Custom-TestData_CL
-  Records to send: 3
-
-Sample data to be sent:
-[
-  {
-    "TimeGenerated": "2026-01-26T20:30:15Z",
-    "EventType": "Test",
-    "Message": "This is a test message from Python script",
-    ...
-  }
-]
-
-======================================================================
-Authenticating with Azure...
-✓ Authentication successful
-
-Creating ingestion client...
-✓ Client created successfully
-
-Sending 3 records to Microsoft Sentinel...
+...
 
 ======================================================================
 ✓ SUCCESS! Data has been ingested.
-  Records sent: 3
+  Records sent: 2
   Response: HTTP 204 No Content (success)
-  Timestamp: 2026-01-26 20:30:15 UTC
+  Timestamp: 2026-02-17 19:50:06 UTC
 
 To query your data in Sentinel, use this KQL query:
   TestData_CL | take 10
@@ -250,183 +200,173 @@ Note: It may take 5-10 minutes for data to appear in Sentinel
 ======================================================================
 ```
 
-### Step 9: Query the Data in Sentinel
+### Step 9: Query Data in Sentinel
 
-**⏱️ Wait 5-20 minutes** for data to be indexed and become queryable.
+⏱️ **Wait 5-20 minutes** for data indexing
 
 1. Navigate to **Microsoft Sentinel** → Your workspace → **Logs**
-2. Run the following KQL query:
+2. Run this KQL query:
 
-```kql
+```kusto
 TestData_CL
-| take 3
+| take 10
 ```
 
-**Expected results:**
-
-| TimeGenerated | EventType | Message | Severity | Source | CustomField1 | CustomField2 |
-|--------------|-----------|---------|----------|--------|--------------|--------------|
-| 2026-01-26 20:30:15 | Test | This is a test message... | Informational | TestScript | Value1 | 12345 |
-| 2026-01-26 20:30:15 | Alert | This is a test alert... | Medium | TestScript | Value2 | 67890 |
-| 2026-01-26 20:30:15 | Info | Another test message... | Low | TestScript | Value3 | 99999 |
+View dynamic data:
+```kusto
+TestData_CL
+| project TimeGenerated, RawData
+| extend SchemaType = RawData.SchemaType
+| take 10
+```
 
 ## 📊 Data Schema
 
-The test data includes the following fields:
+The custom table includes:
 
-| Field Name | Type | Description |
-|------------|------|-------------|
-| **TimeGenerated** | datetime | The timestamp when the data was ingested |
-| **EventType** | string | Type of event (Test, Alert, Info, etc.) |
-| **Message** | string | Event message or description |
-| **Severity** | string | Event severity (Informational, Low, Medium, High, Critical) |
-| **Source** | string | Source of the event data |
-| **CustomField1** | string | Custom field for additional string data |
-| **CustomField2** | int | Custom field for additional numeric data |
+| Field | Type | Description |
+|-------|------|-------------|
+| TimeGenerated | datetime | Ingestion timestamp |
+| RawData | dynamic | JSON object containing flexible schema data |
+| _ResourceId | string | Azure resource identifier |
+
+### Sample RawData Structure
+
+```json
+{
+  "SchemaType": "UserLogin",
+  "UserId": "user123",
+  "Action": "Login",
+  "Details": {
+    "IP": "192.168.1.1",
+    "Success": true
+  }
+}
+```
 
 ## 🔧 Troubleshooting
 
-### Authentication Errors
+### Authentication Error: AADSTS700016
 
-**Problem:** `ClientAuthenticationError` or `401 Unauthorized`
+**Problem**: App not found in directory
 
-**Solution:**
-- Verify your `TENANT_ID`, `CLIENT_ID`, and `CLIENT_SECRET` are correct
-- Ensure the App Registration secret hasn't expired
-- Check that you copied the secret value (not the secret ID)
-
-### Permission Errors
-
-**Problem:** `403 Forbidden` or `Insufficient permissions`
-
-**Solution:**
-- Verify the App Registration has the **Monitoring Metrics Publisher** role on the DCR
-- Wait 2-3 minutes after role assignment for propagation
-- Check role assignment in Azure Portal: DCR → Access control (IAM)
-
-### Configuration Errors
-
-**Problem:** `404 Not Found` or `InvalidDataCollectionRule`
-
-**Solution:**
-- Ensure `DCE_ENDPOINT` is the full URL (starts with `https://`)
-- Verify `DCR_ID` is the **immutableId** (starts with `dcr-`), not the resource ID
-- Check `STREAM_NAME` exactly matches `Custom-TestData_CL`
-
-### Data Not Appearing
-
-**Problem:** Script succeeds but no data in Sentinel
-
-**Solution:**
-- Wait longer - indexing can take up to 20 minutes
-- Verify the table was created: Navigate to **Sentinel** → **Settings** → **Workspace settings** → **Tables**
-- Check for `TestData_CL` in the tables list
-- Verify the DCR dataFlow is configured correctly in Azure Portal
-
-### Python Module Errors
-
-**Problem:** `ModuleNotFoundError: No module named 'azure.monitor'`
-
-**Solution:**
-```bash
-pip install azure-identity azure-monitor-ingestion
+**Solution**: Ensure you created the App Registration in the **same tenant** as your Azure subscription. Run:
+```powershell
+Get-AzContext | Select-Object Account, Tenant
 ```
 
-Or if using a virtual environment:
+### Permission Error: 403 Forbidden
+
+**Problem**: Insufficient permissions to send data
+
+**Solution**:
+1. Verify role assignment: Navigate to DCR → **Access control (IAM)** → **Role assignments**
+2. Look for your App Registration under **Monitoring Metrics Publisher**
+3. Wait 2-5 minutes after role assignment for propagation
+
+### Data Not Appearing in Sentinel
+
+**Problem**: Script succeeds but no data visible
+
+**Solution**:
+- Wait longer (up to 20 minutes for first ingestion)
+- Verify table exists: Navigate to **Sentinel** → **Settings** → **Workspace settings** → **Tables**
+- Check for `TestData_CL` in the tables list
+- Run: `TestData_CL | count` to verify records exist
+
+### Module Not Found Error
+
+**Problem**: `ModuleNotFoundError: No module named 'azure.monitor'`
+
+**Solution**:
 ```bash
-python -m pip install azure-identity azure-monitor-ingestion
+pip install --upgrade azure-identity azure-monitor-ingestion
 ```
 
 ## 🎨 Customization
 
-To modify the data structure:
+### Modify Data Structure
 
-1. Update the `sample_data` list in `test_sentinel_ingestion.py`
-2. Update column definitions in `table.json`
-3. Update stream declaration in `dcr.json`
-4. Update the table schema in `deploy-arm-template.json`
-5. Redeploy the ARM template
+To send different data:
 
-Example: Adding a new field
+1. Edit the `sample_data` list in `test_sentinel_ingestion.py`
+2. Update the JSON structure in `RawData`
+3. No ARM template changes needed (dynamic column)
 
+**Example:**
 ```python
-# In test_sentinel_ingestion.py
 sample_data = [
     {
-        "TimeGenerated": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "EventType": "Test",
-        "Message": "Test message",
-        "Severity": "Low",
-        "Source": "TestScript",
-        "CustomField1": "Value1",
-        "CustomField2": 12345,
-        "NewField": "NewValue"  # Add your new field
+        "TimeGenerated": datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "RawData": {
+            "EventType": "SecurityAlert",
+            "Severity": "High",
+            "Description": "Suspicious activity detected",
+            "SourceIP": "10.0.0.1"
+        }
     }
 ]
 ```
 
-Then update the ARM template to include the new column in the schema.
+### Change Table Schema
 
-## 🧹 Clean Up
+To add fixed columns (beyond RawData):
 
-To remove the test resources:
+1. Edit `deploy-arm-template.json` → `columns` array
+2. Redeploy ARM template
+3. Update Python script data structure
 
-### Delete the Data Collection Rule
+## 🧹 Cleanup
 
-```bash
-az monitor data-collection rule delete \
-  --name TestDataDCR \
-  --resource-group <your-resource-group-name>
+### Delete Data Collection Resources
+
+```powershell
+# Delete Data Collection Rule
+Remove-AzDataCollectionRule -ResourceGroupName "your-rg" -Name "TestDataDCR"
+
+# Delete Data Collection Endpoint
+Remove-AzDataCollectionEndpoint -ResourceGroupName "your-rg" -Name "testdata-dce"
 ```
 
-### Delete the Data Collection Endpoint
+### Delete App Registration
 
-```bash
-az monitor data-collection endpoint delete \
-  --name testdata-dce \
-  --resource-group <your-resource-group-name>
+```powershell
+Remove-AzADApplication -ApplicationId "your-client-id"
 ```
 
-### Note on Custom Tables
+⚠️ **Note**: Custom log tables (`TestData_CL`) cannot be deleted but won't incur costs unless data is actively ingested.
 
-⚠️ **Custom log tables cannot be deleted** - they will remain in your workspace but won't incur costs unless data is being ingested.
+## 📚 Resources
 
-### Delete App Registration (Optional)
+- [Azure Monitor Ingestion API](https://learn.microsoft.com/azure/azure-monitor/logs/logs-ingestion-api-overview)
+- [Data Collection Rules](https://learn.microsoft.com/azure/azure-monitor/essentials/data-collection-rule-overview)
+- [Microsoft Sentinel Custom Logs](https://learn.microsoft.com/azure/sentinel/connect-custom-logs)
+- [Azure Monitor Python SDK](https://learn.microsoft.com/python/api/overview/azure/monitor-ingestion-readme)
 
-1. Navigate to **Azure Portal** → **Azure Active Directory** → **App registrations**
-2. Find your app registration
-3. Click **Delete**
+## ⚠️ Security Best Practices
 
-## 📚 Additional Resources
+For production deployments:
 
-- [Azure Monitor Ingestion API Documentation](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/logs-ingestion-api-overview)
-- [Data Collection Rules Overview](https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/data-collection-rule-overview)
-- [Microsoft Sentinel Custom Logs](https://learn.microsoft.com/en-us/azure/sentinel/connect-custom-logs)
-- [Azure Monitor Python SDK](https://learn.microsoft.com/en-us/python/api/overview/azure/monitor-ingestion-readme)
-
-## 🤝 Contributing
-
-This is part of the Azure-Sentinel repository. For contributions, please follow the main repository guidelines.
-
-## 📝 License
-
-This project is part of the Azure-Sentinel repository and follows the same license terms.
-
-## ⚠️ Security Notice
-
-**Never commit secrets to source control!**
-
-The `test_sentinel_ingestion.py` file contains placeholder values for secrets. When using this in production:
-- Use Azure Key Vault to store secrets
-- Use environment variables
-- Use managed identities where possible
-- Rotate secrets regularly
+- ✅ Store secrets in **Azure Key Vault**
+- ✅ Use **Managed Identities** instead of client secrets
+- ✅ Implement **certificate-based authentication**
+- ✅ Enable **diagnostic logging** on DCR
+- ✅ Rotate secrets regularly
+- ✅ Use **least privilege** RBAC assignments
+- ✅ Implement **network restrictions** on DCE
 
 ## 💡 Support
 
-For issues or questions:
-- Check the [Troubleshooting](#-troubleshooting) section above
-- Review Azure Monitor Ingestion API logs in Azure Portal
-- Check Microsoft Sentinel documentation
-- Open an issue in the Azure-Sentinel GitHub repository
+For issues:
+1. Check the **Troubleshooting** section above
+2. Review deployment outputs and error messages
+3. Verify all configuration values match
+4. Check Azure Monitor logs for DCR/DCE diagnostics
 
+## 📝 License
+
+This project is provided as-is for testing and acceleration purposes.
+
+---
+
+**Last Updated**: February 2026
