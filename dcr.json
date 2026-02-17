@@ -1,0 +1,72 @@
+[
+  {
+    "name": "TestDataDCR",
+    "apiVersion": "2021-09-01-preview",
+    "type": "Microsoft.Insights/dataCollectionRules",
+    "location": "{{location}}",
+    "properties": {
+      "dataCollectionEndpointId": "{{dataCollectionEndpointId}}",
+      "streamDeclarations": {
+        "Custom-TestData_CL": {
+          "columns": [
+            {
+              "name": "TimeGenerated",
+              "type": "datetime",
+              "description": "The timestamp when the event occurred"
+            },
+            {
+              "name": "EventType",
+              "type": "string",
+              "description": "Type of event (Test, Alert, Info, etc.)"
+            },
+            {
+              "name": "Message",
+              "type": "string",
+              "description": "Event message or description"
+            },
+            {
+              "name": "Severity",
+              "type": "string",
+              "description": "Event severity level (Informational, Low, Medium, High, Critical)"
+            },
+            {
+              "name": "Source",
+              "type": "string",
+              "description": "Source of the event data"
+            },
+            {
+              "name": "CustomField1",
+              "type": "string",
+              "description": "Custom field for additional string data"
+            },
+            {
+              "name": "CustomField2",
+              "type": "int",
+              "description": "Custom field for additional numeric data"
+            }
+          ]
+        }
+      },
+      "destinations": {
+        "logAnalytics": [
+          {
+            "workspaceResourceId": "{{workspaceResourceId}}",
+            "name": "clv2ws1"
+          }
+        ]
+      },
+      "dataFlows": [
+        {
+          "streams": [
+            "Custom-TestData_CL"
+          ],
+          "destinations": [
+            "clv2ws1"
+          ],
+          "transformKql": "source | extend TimeGenerated = iff(isempty(TimeGenerated), now(), TimeGenerated)",
+          "outputStream": "Custom-TestData_CL"
+        }
+      ]
+    }
+  }
+]
